@@ -1,0 +1,5 @@
+authors = ["Ricky <Ricky@Hosfe.lt>"]
+description = "A simple DNS over HTTPS server using Fastly's Edge Network with Built in DNS Ad Blocking"
+language = "rust"
+manifest_version = 3
+name = "DNS over HTTPS on Edge"

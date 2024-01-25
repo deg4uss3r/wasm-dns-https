@@ -1,0 +1,17 @@
+[package]
+name = "dns-over-https-wasm"
+version = "0.1.0"
+authors = ["Ricky <Ricky@Hosfe.lt>"]
+edition = "2021"
+publish = false
+
+[profile.release]
+debug = 1
+
+[dependencies]
+fastly = "0.9.8"
+base64 = "0.21"
+dns-message-parser = "0.7"
+bytes = "1.5"
+wasmedge_wasi_socket = "0.5"
+tokio_wasi = { version = "1", features = ["rt", "net"] }
