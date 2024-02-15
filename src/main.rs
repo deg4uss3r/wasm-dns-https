@@ -10,17 +10,19 @@ use std::time::Duration;
 const BLOCKLIST: &[&str] = &["facebook.com"];
 const GOOGLEDNS: &str = "https://dns.google/resolve?name=";
 const DNSBINARY: &str = "&ct=application/dns-message";
+const BACKEND: &str = "hosfelt_dev";
 
 #[fastly::main]
 fn main(req: Request) -> Result<Response, Error> {
-    //dynamic backend setup
-    let backend = Backend::builder("my_backend", "http-me.glitch.me")
+    // Dynamic backend setup
+    // This needs activated on the service, I'd like to avoid that for now 
+    /*let backend = Backend::builder("my_backend", "http-me.glitch.me")
     .override_host("http-me.glitch.me")
     .connect_timeout(Duration::from_secs(1))
     .first_byte_timeout(Duration::from_secs(15))
     .between_bytes_timeout(Duration::from_secs(10))
     .enable_ssl()
-    .finish()?;
+    .finish()?;*/
 
     // Log service version
     println!(
@@ -86,7 +88,7 @@ fn main(req: Request) -> Result<Response, Error> {
 
            println!("{req}"); 
 
-            let mut response = Request::get(req).send(backend)?;
+            let mut response = Request::get(req).send(BACKEND)?;
             println!("resp: {response:?}");
             let body = response.take_body_bytes();
             let content_length = response.get_content_length();
