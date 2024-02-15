@@ -3,3 +3,4 @@ description = "A simple DNS over HTTPS server using Fastly's Edge Network with B
 language = "rust"
 manifest_version = 3
 name = "DNS over HTTPS on Edge"
+service_id = "l5NwDD24SRtoqU5Oln44w5"
