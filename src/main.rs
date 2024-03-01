@@ -4,7 +4,7 @@ use fastly::{mime, Error, Request, Response};
 use log::{Level, LevelFilter};
 use log_fastly::Logger;
 use serde::Serialize;
-use time::OffsetDateTime;
+use time::{format_description::well_known, OffsetDateTime};
 
 use std::{collections::HashMap, str};
 
@@ -31,7 +31,7 @@ struct LogData {
 fn log_to_backend(level: Level, message: String, additional_info: HashMap<String, String>) {
     let log_value = LogFormat {
         time: OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)
+            .format(&well_known::Rfc3339)
             .unwrap(),
         data: LogData {
             id: std::env::var("FASTLY_TRACE_ID").unwrap_or_default(),
@@ -50,6 +50,9 @@ fn log_to_backend(level: Level, message: String, additional_info: HashMap<String
 
 #[fastly::main]
 fn main(req: Request) -> Result<Response, Error> {
+    // Time to start for main
+    let start_time = std::time::Instant::now();
+
     // Initalize Logging
     Logger::builder()
         .max_level(LevelFilter::Debug)
@@ -68,9 +71,19 @@ fn main(req: Request) -> Result<Response, Error> {
                     let body = match *req.get_method() {
                         Method::GET => {
                             log_to_backend(
-                                Level::Warn,
-                                format!("Request was: {}", req.get_url()),
-                                HashMap::from([("request_type".to_string(), "GET".to_string())]),
+                                Level::Info,
+                                "Incoming DNS Request".to_string(),
+                                HashMap::from([
+                                    ("request_type".to_string(), "GET".to_string()),
+                                    (
+                                        "duration_since_start".to_string(),
+                                        format!("{}", start_time.elapsed().as_secs()),
+                                    ),
+                                    (
+                                        "request_url".to_string(),
+                                        req.get_url_str().to_string(),
+                                    ),
+                                ]),
                             );
 
                             let base64_url = req.get_query_parameter("dns").unwrap().to_owned();
@@ -83,9 +96,19 @@ fn main(req: Request) -> Result<Response, Error> {
                             let body = req.into_body_bytes();
 
                             log_to_backend(
-                                Level::Warn,
-                                format!("Request was: {}", req_url),
-                                HashMap::from([("request_type".to_string(), "POST".to_string())]),
+                                Level::Info,
+                                "Incoming DNS Request".to_string(),
+                                HashMap::from([
+                                    ("request_type".to_string(), "POST".to_string()),
+                                    (
+                                        "duration_since_start".to_string(),
+                                        format!("{}", start_time.elapsed().as_secs()),
+                                    ),
+                                    (
+                                        "request_url".to_string(),
+                                        req_url.to_string(),
+                                    ),
+                                ]),
                             );
 
                             body
@@ -107,8 +130,14 @@ fn main(req: Request) -> Result<Response, Error> {
                     if block_list_urls.contains(&urls[0].as_str()) {
                         log_to_backend(
                             Level::Info,
-                            "blocked request".to_string(),
-                            HashMap::from([("url".to_string(), urls[0].clone())]),
+                            "Blocked request".to_string(),
+                            HashMap::from([
+                                ("url".to_string(), urls[0].clone()),
+                                (
+                                    "duration_since_start".to_string(),
+                                    format!("{}", start_time.elapsed().as_secs()),
+                                ),
+                            ]),
                         );
                         return Ok(Response::from_status(StatusCode::IM_A_TEAPOT)
                             .with_header("Content-Type", "BLOCKED")
@@ -118,14 +147,49 @@ fn main(req: Request) -> Result<Response, Error> {
                     // For now only do one question, it's possible there's multiple in a single request
                     let req = format!("{}{}{}", GOOGLEDNS, urls[0], DNSBINARY);
                     log_to_backend(
-                        Level::Warn,
-                        format!("request to google: {}", req),
-                        HashMap::new(),
+                        Level::Info,
+                        "Request sent to Google".to_string(),
+                        HashMap::from([
+                                ("url".to_string(), req.clone()),
+                                (
+                                    "duration_since_start".to_string(),
+                                    format!("{}", start_time.elapsed().as_secs()),
+                                ),    
+                        ]),
                     );
 
                     let response = request::Request::get(req).send(BACKEND)?;
-                    log_to_backend(Level::Warn, format!("resp: {:?}", response), HashMap::new());
+                    let headers = response
+                        .get_headers()
+                        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or_default().to_string()))
+                        .collect::<HashMap<String, String>>();
+                    let mut additional_info: HashMap<String, String> = HashMap::from([
+                        (
+                            "duration_since_start".to_string(),
+                            format!("{}", start_time.elapsed().as_secs()),
+                        ),
+                        ("http_status".to_string(), response.get_status().to_string()),
+                        (
+                            "http_version".to_string(),
+                            format!("{:?}", response.get_version()),
+                        ),
+                    ]);
+                    additional_info.extend(headers);
+
+                    log_to_backend(Level::Info, "Response from Google".to_string(), additional_info);
                     let bytes = response.into_body().into_bytes();
+
+                    log_to_backend(
+                        Level::Info,
+                        "Successfully fetched from Google".to_string(),
+                        HashMap::from([
+                            (
+                                "duration_since_start".to_string(),
+                                format!("{}", start_time.elapsed().as_secs()),
+                            ),
+                            ("http_status".to_string(), StatusCode::OK.to_string()),
+                        ]),
+                    );
 
                     Ok(Response::from_status(StatusCode::OK)
                         .with_header("Content-Type", "application/dns-message")
@@ -133,14 +197,49 @@ fn main(req: Request) -> Result<Response, Error> {
                         .with_header("Cache-Control", "max-age=3709")
                         .with_body(bytes))
                 }
-                _ => Ok(Response::from_status(StatusCode::NOT_FOUND)
-                    .with_content_type(mime::TEXT_HTML_UTF_8)
-                    .with_body(include_str!("./404.html"))),
+                _ => {
+                    log_to_backend(
+                        Level::Warn,
+                        "bad url".to_string(),
+                        HashMap::from([
+                            (
+                                "duration_since_start".to_string(),
+                                format!("{}", start_time.elapsed().as_secs()),
+                            ),
+                            ("http_status".to_string(), StatusCode::NOT_FOUND.to_string()),
+                            ("requested_url".to_string(), req.get_url().to_string()),
+                        ]),
+                    );
+                    Ok(Response::from_status(StatusCode::NOT_FOUND)
+                        .with_content_type(mime::TEXT_HTML_UTF_8)
+                        .with_body(include_str!("./404.html")))
+                }
             }
         }
         // Block all other request methods as per spec
-        _ => Ok(Response::from_status(StatusCode::METHOD_NOT_ALLOWED)
-            .with_header(header::ALLOW, "GET, POST")
-            .with_body_text_plain("This method is not allowed\n")),
+        _ => {
+            log_to_backend(
+                Level::Warn,
+                "bad request method".to_string(),
+                HashMap::from([
+                    (
+                        "duration_since_start".to_string(),
+                        format!("{}", start_time.elapsed().as_secs()),
+                    ),
+                    (
+                        "http_status".to_string(),
+                        StatusCode::METHOD_NOT_ALLOWED.to_string(),
+                    ),
+                    (
+                        "requested_method".to_string(),
+                        req.get_method_str().to_string(),
+                    ),
+                ]),
+            );
+
+            Ok(Response::from_status(StatusCode::METHOD_NOT_ALLOWED)
+                .with_header(header::ALLOW, "GET, POST")
+                .with_body_text_plain("This method is not allowed\n"))
+        }
     }
 }
