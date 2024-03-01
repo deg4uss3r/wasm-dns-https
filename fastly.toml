@@ -7,13 +7,13 @@ service_id = "l5NwDD24SRtoqU5Oln44w5"
 
 [setup]
   [setup.backends]
-    [setup.backends.hosfelt_dev]
-      address = "https://hosfelt.dev"
+    [setup.backends.dns_google]
+      address = "https://dns.google"
       description = "Normalized backend"
       port = 443
 
 [local_server]
   [local_server.backends]
-    [local_server.backends.hosfelt_dev]
-      url = "http://127.0.0.1/"
+    [local_server.backends.dns_google]
+      url = "https://dns.google"
 
