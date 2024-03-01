@@ -77,7 +77,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                     ("request_type".to_string(), "GET".to_string()),
                                     (
                                         "duration_since_start".to_string(),
-                                        format!("{}", start_time.elapsed().as_secs()),
+                                        format!("{}", start_time.elapsed().as_micros()),
                                     ),
                                     (
                                         "request_url".to_string(),
@@ -102,7 +102,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                     ("request_type".to_string(), "POST".to_string()),
                                     (
                                         "duration_since_start".to_string(),
-                                        format!("{}", start_time.elapsed().as_secs()),
+                                        format!("{}", start_time.elapsed().as_micros()),
                                     ),
                                     (
                                         "request_url".to_string(),
@@ -135,7 +135,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                 ("url".to_string(), urls[0].clone()),
                                 (
                                     "duration_since_start".to_string(),
-                                    format!("{}", start_time.elapsed().as_secs()),
+                                    format!("{}", start_time.elapsed().as_micros()),
                                 ),
                             ]),
                         );
@@ -153,7 +153,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                 ("url".to_string(), req.clone()),
                                 (
                                     "duration_since_start".to_string(),
-                                    format!("{}", start_time.elapsed().as_secs()),
+                                    format!("{}", start_time.elapsed().as_micros()),
                                 ),    
                         ]),
                     );
@@ -166,7 +166,7 @@ fn main(req: Request) -> Result<Response, Error> {
                     let mut additional_info: HashMap<String, String> = HashMap::from([
                         (
                             "duration_since_start".to_string(),
-                            format!("{}", start_time.elapsed().as_secs()),
+                            format!("{}", start_time.elapsed().as_micros()),
                         ),
                         ("http_status".to_string(), response.get_status().to_string()),
                         (
@@ -185,7 +185,7 @@ fn main(req: Request) -> Result<Response, Error> {
                         HashMap::from([
                             (
                                 "duration_since_start".to_string(),
-                                format!("{}", start_time.elapsed().as_secs()),
+                                format!("{}", start_time.elapsed().as_micros()),
                             ),
                             ("http_status".to_string(), StatusCode::OK.to_string()),
                         ]),
@@ -204,7 +204,7 @@ fn main(req: Request) -> Result<Response, Error> {
                         HashMap::from([
                             (
                                 "duration_since_start".to_string(),
-                                format!("{}", start_time.elapsed().as_secs()),
+                                format!("{}", start_time.elapsed().as_micros()),
                             ),
                             ("http_status".to_string(), StatusCode::NOT_FOUND.to_string()),
                             ("requested_url".to_string(), req.get_url().to_string()),
@@ -224,7 +224,7 @@ fn main(req: Request) -> Result<Response, Error> {
                 HashMap::from([
                     (
                         "duration_since_start".to_string(),
-                        format!("{}", start_time.elapsed().as_secs()),
+                        format!("{}", start_time.elapsed().as_micros()),
                     ),
                     (
                         "http_status".to_string(),
