@@ -82,10 +82,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                         "duration_since_start".to_string(),
                                         format!("{}", start_time.elapsed().as_micros()),
                                     ),
-                                    (
-                                        "request_url".to_string(),
-                                        req.get_url_str().to_string(),
-                                    ),
+                                    ("request_url".to_string(), req.get_url_str().to_string()),
                                 ]),
                             );
 
@@ -107,10 +104,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                         "duration_since_start".to_string(),
                                         format!("{}", start_time.elapsed().as_micros()),
                                     ),
-                                    (
-                                        "request_url".to_string(),
-                                        req_url.to_string(),
-                                    ),
+                                    ("request_url".to_string(), req_url.to_string()),
                                 ]),
                             );
 
@@ -152,11 +146,11 @@ fn main(req: Request) -> Result<Response, Error> {
                         Level::Info,
                         "Request sent to Google".to_string(),
                         HashMap::from([
-                                ("url".to_string(), req.clone()),
-                                (
-                                    "duration_since_start".to_string(),
-                                    format!("{}", start_time.elapsed().as_micros()),
-                                ),    
+                            ("url".to_string(), req.clone()),
+                            (
+                                "duration_since_start".to_string(),
+                                format!("{}", start_time.elapsed().as_micros()),
+                            ),
                         ]),
                     );
 
@@ -178,7 +172,11 @@ fn main(req: Request) -> Result<Response, Error> {
                     ]);
                     additional_info.extend(headers);
 
-                    log_to_backend(Level::Info, "Response from Google".to_string(), additional_info);
+                    log_to_backend(
+                        Level::Info,
+                        "Response from Google".to_string(),
+                        additional_info,
+                    );
                     let bytes = response.into_body().into_bytes();
 
                     log_to_backend(
