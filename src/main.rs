@@ -48,6 +48,7 @@ fn log_to_backend(level: Level, message: String, additional_info: HashMap<String
     log::log!(level, "{}", serde_json::to_string(&log_value).unwrap());
 }
 
+//TODO proper error handling
 #[fastly::main]
 fn main(req: Request) -> Result<Response, Error> {
     // Time to start for main
@@ -65,7 +66,9 @@ fn main(req: Request) -> Result<Response, Error> {
             match req.get_path() {
                 x if x.starts_with("/dns-query") => {
                     // load the block list
-                    //TODO perf, maybe store this whole list in the KV store?
+                    //TODO perf
+                    // I'd like to store this list in a config/KV-store but with the current limits it would not fit
+                    // https://docs.fastly.com/products/compute-resource-limits#config-store
                     let block_list_urls: Vec<&str> = serde_json::from_slice(BLOCKLIST).unwrap();
 
                     let body = match *req.get_method() {
@@ -90,8 +93,8 @@ fn main(req: Request) -> Result<Response, Error> {
                             BASE64_URL_SAFE_NO_PAD.decode(base64_url).unwrap()
                         }
                         Method::POST => {
-                            // POST is similar to GET except the request is in the body and isn't base64 encoded but rather
-                            // bytes on the wire
+                            // POST is similar to GET except the request is in the body and it is not base64
+                            // encoded but rather bytes on the wire
                             let req_url = req.get_url().to_owned();
                             let body = req.into_body_bytes();
 
@@ -113,8 +116,7 @@ fn main(req: Request) -> Result<Response, Error> {
 
                             body
                         }
-                        // We've trapped all other request types in the above block
-                        //TODO combine those so this is more readable
+                        // We've trapped all other request types in the outer Match statement
                         _ => unreachable!(),
                     };
 
@@ -216,7 +218,7 @@ fn main(req: Request) -> Result<Response, Error> {
                 }
             }
         }
-        // Block all other request methods as per spec
+        // Block all other request methods that are not GET or POST as per spec
         _ => {
             log_to_backend(
                 Level::Warn,
