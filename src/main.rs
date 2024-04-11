@@ -243,7 +243,7 @@ fn main(req: Request) -> Result<Response, Error> {
                             bytes.clone(),
                             Duration::from_secs(2_628_000),
                         ) {
-                            Ok(i) => log_to_backend(
+                            Ok(_i) => log_to_backend(
                                 Level::Info,
                                 "Stored URL Into Cache".to_string(),
                                 HashMap::from([
@@ -263,6 +263,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                         format!("{}", start_time.elapsed().as_micros()),
                                     ),
                                     ("request_url".to_string(), urls[0].clone()),
+                                    ("error".to_string(), e.to_string()),
                                 ]),
                             ),
                         }
