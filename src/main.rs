@@ -17,7 +17,7 @@ use std::{
 const GOOGLEDNS: &str = "https://dns.google/resolve?name=";
 const DNSBINARY: &str = "&ct=application/dns-message";
 const BACKEND: &str = "dns_google";
-const BLOCKLIST: &[u8; 5136551] = include_bytes!("./blocklist.se");
+const BLOCKLIST: &[u8; 5136757] = include_bytes!("./blocklist.se");
 
 #[derive(Debug, Serialize)]
 struct LogFormat {
