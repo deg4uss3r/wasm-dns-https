@@ -1,12 +1,18 @@
 use base64::prelude::*;
 use fastly::http::{header, request, Method, StatusCode};
-use fastly::{mime, Error, Request, Response};
+use fastly::{cache::simple, mime, Error, Request, Response};
 use log::{Level, LevelFilter};
 use log_fastly::Logger;
 use serde::Serialize;
 use time::{format_description::well_known, OffsetDateTime};
 
-use std::{collections::HashMap, str};
+use std::time::Duration;
+use std::{
+    collections::hash_map::DefaultHasher,
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    str,
+};
 
 const GOOGLEDNS: &str = "https://dns.google/resolve?name=";
 const DNSBINARY: &str = "&ct=application/dns-message";
@@ -48,6 +54,12 @@ fn log_to_backend(level: Level, message: String, additional_info: HashMap<String
     log::log!(level, "{}", serde_json::to_string(&log_value).unwrap());
 }
 
+fn hash<T: Hash>(t: &T) -> String {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish().to_string()
+}
+
 //TODO proper error handling
 #[fastly::main]
 fn main(req: Request) -> Result<Response, Error> {
@@ -69,6 +81,7 @@ fn main(req: Request) -> Result<Response, Error> {
                     //TODO perf
                     // I'd like to store this list in a config/KV-store but with the current limits it would not fit
                     // https://docs.fastly.com/products/compute-resource-limits#config-store
+                    // could possibly split this up and using a lookup hash
                     let block_list_urls: Vec<&str> = serde_json::from_slice(BLOCKLIST).unwrap();
 
                     let body = match *req.get_method() {
@@ -137,7 +150,39 @@ fn main(req: Request) -> Result<Response, Error> {
                         );
                         return Ok(Response::from_status(StatusCode::IM_A_TEAPOT)
                             .with_header("Content-Type", "BLOCKED")
-                            .with_header("Cache-Control", "max-age=0"));
+                            .with_header("Cache-Control", "max-age=0")
+                            .with_header("x-blocked-on-request", "true"));
+                    }
+
+                    // Try to fetch the response from cache, if successful you should have
+                    // an optopn with a body in it, if not after you send the request to the service
+                    // and the response back to the user, store it in cache for next time
+                    // the cache key is just a standard hash of the requested URL
+                    let cache = match simple::get(hash(&urls[0])) {
+                        Ok(body) => body,
+                        Err(_) => None,
+                    };
+
+                    if let Some(body) = cache {
+                        log_to_backend(
+                            Level::Info,
+                            "Sent URL from Cache".to_string(),
+                            HashMap::from([
+                                (
+                                    "duration_since_start".to_string(),
+                                    format!("{}", start_time.elapsed().as_micros()),
+                                ),
+                                ("request_url".to_string(), urls[0].clone()),
+                            ]),
+                        );
+                        let bytes = body.into_bytes();
+
+                        return Ok(Response::from_status(StatusCode::OK)
+                            .with_header("Content-Type", "application/dns-message")
+                            .with_header("Content-Length", format!("{}", bytes.len()))
+                            .with_header("Cache-Control", "max-age=3709")
+                            .with_header("x-cache-hit", "served from cache")
+                            .with_body(bytes));
                     }
 
                     // For now only do one question, it's possible there's multiple in a single request
@@ -191,10 +236,43 @@ fn main(req: Request) -> Result<Response, Error> {
                         ]),
                     );
 
+                    //Store the result if it was not found in cache
+                    if cache.is_none() {
+                        match simple::get_or_set(
+                            hash(&urls[0]),
+                            bytes.clone(),
+                            Duration::from_secs(2_628_000),
+                        ) {
+                            Ok(i) => log_to_backend(
+                                Level::Info,
+                                "Stored URL Into Cache".to_string(),
+                                HashMap::from([
+                                    (
+                                        "duration_since_start".to_string(),
+                                        format!("{}", start_time.elapsed().as_micros()),
+                                    ),
+                                    ("request_url".to_string(), urls[0].clone()),
+                                ]),
+                            ),
+                            Err(e) => log_to_backend(
+                                Level::Warn,
+                                "Error Storing URL into Cache".to_string(),
+                                HashMap::from([
+                                    (
+                                        "duration_since_start".to_string(),
+                                        format!("{}", start_time.elapsed().as_micros()),
+                                    ),
+                                    ("request_url".to_string(), urls[0].clone()),
+                                ]),
+                            ),
+                        }
+                    }
+
                     Ok(Response::from_status(StatusCode::OK)
                         .with_header("Content-Type", "application/dns-message")
                         .with_header("Content-Length", format!("{}", bytes.len()))
                         .with_header("Cache-Control", "max-age=3709")
+                        .with_header("x-doh-response", "hosfelt.dev")
                         .with_body(bytes))
                 }
                 _ => {
