@@ -17,7 +17,7 @@ use std::{
 const GOOGLEDNS: &str = "https://dns.google/resolve?name=";
 const DNSBINARY: &str = "&ct=application/dns-message";
 const BACKEND: &str = "dns_google";
-const BLOCKLIST: &[u8; 5136757] = include_bytes!("./blocklist.se");
+const BLOCKLIST: &[u8; 5136805] = include_bytes!("./blocklist.se");
 
 #[derive(Debug, Serialize)]
 struct LogFormat {
@@ -200,6 +200,7 @@ fn main(req: Request) -> Result<Response, Error> {
                     );
 
                     let response = request::Request::get(req).send(BACKEND)?;
+                    let response_status = response.get_status().to_string();
                     let headers = response
                         .get_headers()
                         .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or_default().to_string()))
@@ -209,7 +210,7 @@ fn main(req: Request) -> Result<Response, Error> {
                             "duration_since_start".to_string(),
                             format!("{}", start_time.elapsed().as_micros()),
                         ),
-                        ("http_status".to_string(), response.get_status().to_string()),
+                        ("http_status".to_string(), response_status.clone()),
                         (
                             "http_version".to_string(),
                             format!("{:?}", response.get_version()),
@@ -232,7 +233,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                 "duration_since_start".to_string(),
                                 format!("{}", start_time.elapsed().as_micros()),
                             ),
-                            ("http_status".to_string(), StatusCode::OK.to_string()),
+                            ("http_status".to_string(), response_status),
                         ]),
                     );
 
@@ -268,6 +269,15 @@ fn main(req: Request) -> Result<Response, Error> {
                             ),
                         }
                     }
+
+                    log_to_backend(
+                        Level::Info,
+                        "Sent Response to User".to_string(),
+                        HashMap::from([(
+                            "duration_since_start".to_string(),
+                            format!("{}", start_time.elapsed().as_micros()),
+                        )]),
+                    );
 
                     Ok(Response::from_status(StatusCode::OK)
                         .with_header("Content-Type", "application/dns-message")
