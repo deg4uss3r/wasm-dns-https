@@ -9,6 +9,8 @@ publish = false
 debug = 1
 
 [dependencies]
+anyhow = "1.0"
+thiserror = "1.0"
 fastly = "0.9.8"
 log-fastly = "0.9"
 log = "0.4"

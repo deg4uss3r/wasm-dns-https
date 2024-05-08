@@ -1,9 +1,11 @@
+use anyhow::Error;
 use base64::prelude::*;
 use fastly::http::{header, request, Method, StatusCode};
-use fastly::{cache::simple, mime, Error, Request, Response};
+use fastly::{cache::simple, mime, Request, Response};
 use log::{Level, LevelFilter};
 use log_fastly::Logger;
 use serde::Serialize;
+use thiserror::Error as DeriveError;
 use time::{format_description::well_known, OffsetDateTime};
 
 use std::time::Duration;
@@ -34,11 +36,19 @@ struct LogData {
     additional_info: HashMap<String, String>,
 }
 
-fn log_to_backend(level: Level, message: String, additional_info: HashMap<String, String>) {
+#[derive(DeriveError, Debug)]
+enum DnsError {
+    #[error("Error: dns query parameter was not found.")]
+    QueryParamError,
+}
+
+fn log_to_backend(
+    level: Level,
+    message: String,
+    additional_info: HashMap<String, String>,
+) -> Result<(), Error> {
     let log_value = LogFormat {
-        time: OffsetDateTime::now_utc()
-            .format(&well_known::Rfc3339)
-            .unwrap(),
+        time: OffsetDateTime::now_utc().format(&well_known::Rfc3339)?,
         data: LogData {
             id: std::env::var("FASTLY_TRACE_ID").unwrap_or_default(),
             level: level.to_string(),
@@ -51,7 +61,9 @@ fn log_to_backend(level: Level, message: String, additional_info: HashMap<String
         },
     };
 
-    log::log!(level, "{}", serde_json::to_string(&log_value).unwrap());
+    log::log!(level, "{}", serde_json::to_string(&log_value)?);
+
+    Ok(())
 }
 
 fn hash<T: Hash>(t: &T) -> String {
@@ -60,7 +72,8 @@ fn hash<T: Hash>(t: &T) -> String {
     s.finish().to_string()
 }
 
-//TODO proper error handling
+// Returns a response or an `anyhow::Error`
+// if an error is returned Compute will automatically send a 500 to the client
 #[fastly::main]
 fn main(req: Request) -> Result<Response, Error> {
     // Time to start for main
@@ -78,11 +91,9 @@ fn main(req: Request) -> Result<Response, Error> {
             match req.get_path() {
                 x if x.starts_with("/dns-query") => {
                     // load the block list
-                    //TODO perf
-                    // I'd like to store this list in a config/KV-store but with the current limits it would not fit
-                    // https://docs.fastly.com/products/compute-resource-limits#config-store
-                    // could possibly split this up and using a lookup hash
-                    let block_list_urls: Vec<&str> = serde_json::from_slice(BLOCKLIST).unwrap();
+                    // TODO perf
+                    // I'd like to store this list in a KV-store
+                    let block_list_urls: Vec<&str> = serde_json::from_slice(BLOCKLIST)?;
 
                     let body = match *req.get_method() {
                         Method::GET => {
@@ -97,10 +108,14 @@ fn main(req: Request) -> Result<Response, Error> {
                                     ),
                                     ("request_url".to_string(), req.get_url_str().to_string()),
                                 ]),
-                            );
+                            )?;
 
-                            let base64_url = req.get_query_parameter("dns").unwrap().to_owned();
-                            BASE64_URL_SAFE_NO_PAD.decode(base64_url).unwrap()
+                            let base64_url = match req.get_query_parameter("dns") {
+                                Some(param) => param.to_owned(),
+                                None => return Err(DnsError::QueryParamError)?,
+                            };
+
+                            BASE64_URL_SAFE_NO_PAD.decode(base64_url)?
                         }
                         Method::POST => {
                             // POST is similar to GET except the request is in the body and it is not base64
@@ -119,7 +134,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                     ),
                                     ("request_url".to_string(), req_url.to_string()),
                                 ]),
-                            );
+                            )?;
 
                             body
                         }
@@ -127,7 +142,7 @@ fn main(req: Request) -> Result<Response, Error> {
                         _ => unreachable!(),
                     };
 
-                    let dns_request = dns_parser::Packet::parse(&body).unwrap();
+                    let dns_request = dns_parser::Packet::parse(&body)?;
                     let urls = dns_request
                         .questions
                         .iter()
@@ -135,7 +150,6 @@ fn main(req: Request) -> Result<Response, Error> {
                         .collect::<Vec<String>>();
 
                     // For now just dead match the domain with that is requested
-                    //TODO fixup so subdomain matching etc works
                     if block_list_urls.contains(&urls[0].as_str()) {
                         log_to_backend(
                             Level::Info,
@@ -147,15 +161,15 @@ fn main(req: Request) -> Result<Response, Error> {
                                     format!("{}", start_time.elapsed().as_micros()),
                                 ),
                             ]),
-                        );
+                        )?;
+
                         return Ok(Response::from_status(StatusCode::IM_A_TEAPOT)
                             .with_header("Content-Type", "BLOCKED")
-                            .with_header("Cache-Control", "max-age=0")
-                            .with_header("x-blocked-on-request", "true"));
+                            .with_header("Cache-Control", "max-age=0"));
                     }
 
                     // Try to fetch the response from cache, if successful you should have
-                    // an optopn with a body in it, if not after you send the request to the service
+                    // an option with a body in it, if not after you send the request to the service
                     // and the response back to the user, store it in cache for next time
                     // the cache key is just a standard hash of the requested URL
                     let cache = match simple::get(hash(&urls[0])) {
@@ -174,14 +188,14 @@ fn main(req: Request) -> Result<Response, Error> {
                                 ),
                                 ("request_url".to_string(), urls[0].clone()),
                             ]),
-                        );
+                        )?;
+
                         let bytes = body.into_bytes();
 
                         return Ok(Response::from_status(StatusCode::OK)
                             .with_header("Content-Type", "application/dns-message")
                             .with_header("Content-Length", format!("{}", bytes.len()))
                             .with_header("Cache-Control", "max-age=3709")
-                            .with_header("x-cache-hit", "served from cache")
                             .with_body(bytes));
                     }
 
@@ -197,7 +211,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                 format!("{}", start_time.elapsed().as_micros()),
                             ),
                         ]),
-                    );
+                    )?;
 
                     let response = request::Request::get(req).send(BACKEND)?;
                     let response_status = response.get_status().to_string();
@@ -218,24 +232,16 @@ fn main(req: Request) -> Result<Response, Error> {
                     ]);
                     additional_info.extend(headers);
 
-                    log_to_backend(
-                        Level::Info,
-                        "Response from Google".to_string(),
-                        additional_info,
-                    );
                     let bytes = response.into_body().into_bytes();
 
                     log_to_backend(
                         Level::Info,
                         "Successfully fetched from Google".to_string(),
-                        HashMap::from([
-                            (
-                                "duration_since_start".to_string(),
-                                format!("{}", start_time.elapsed().as_micros()),
-                            ),
-                            ("http_status".to_string(), response_status),
-                        ]),
-                    );
+                        HashMap::from([(
+                            "duration_since_start".to_string(),
+                            format!("{}", start_time.elapsed().as_micros()),
+                        )]),
+                    )?;
 
                     //Store the result if it was not found in cache
                     if cache.is_none() {
@@ -254,9 +260,9 @@ fn main(req: Request) -> Result<Response, Error> {
                                     ),
                                     ("request_url".to_string(), urls[0].clone()),
                                 ]),
-                            ),
+                            )?,
                             Err(e) => log_to_backend(
-                                Level::Warn,
+                                Level::Error,
                                 "Error Storing URL into Cache".to_string(),
                                 HashMap::from([
                                     (
@@ -266,7 +272,7 @@ fn main(req: Request) -> Result<Response, Error> {
                                     ("request_url".to_string(), urls[0].clone()),
                                     ("error".to_string(), e.to_string()),
                                 ]),
-                            ),
+                            )?,
                         }
                     }
 
@@ -277,13 +283,12 @@ fn main(req: Request) -> Result<Response, Error> {
                             "duration_since_start".to_string(),
                             format!("{}", start_time.elapsed().as_micros()),
                         )]),
-                    );
+                    )?;
 
                     Ok(Response::from_status(StatusCode::OK)
                         .with_header("Content-Type", "application/dns-message")
                         .with_header("Content-Length", format!("{}", bytes.len()))
                         .with_header("Cache-Control", "max-age=3709")
-                        .with_header("x-doh-response", "hosfelt.dev")
                         .with_body(bytes))
                 }
                 _ => {
@@ -298,7 +303,7 @@ fn main(req: Request) -> Result<Response, Error> {
                             ("http_status".to_string(), StatusCode::NOT_FOUND.to_string()),
                             ("requested_url".to_string(), req.get_url().to_string()),
                         ]),
-                    );
+                    )?;
                     Ok(Response::from_status(StatusCode::NOT_FOUND)
                         .with_content_type(mime::TEXT_HTML_UTF_8)
                         .with_body(include_str!("./404.html")))
@@ -324,7 +329,7 @@ fn main(req: Request) -> Result<Response, Error> {
                         req.get_method_str().to_string(),
                     ),
                 ]),
-            );
+            )?;
 
             Ok(Response::from_status(StatusCode::METHOD_NOT_ALLOWED)
                 .with_header(header::ALLOW, "GET, POST")
