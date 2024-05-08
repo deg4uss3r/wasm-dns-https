@@ -96,6 +96,7 @@ dependencies = [
 name = "dns-over-https-wasm"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64 0.21.7",
  "bytes",
  "dns-message-parser",
@@ -105,6 +106,7 @@ dependencies = [
  "log-fastly",
  "serde",
  "serde_json",
+ "thiserror",
  "time",
 ]
 
