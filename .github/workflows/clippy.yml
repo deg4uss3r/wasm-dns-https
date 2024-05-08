@@ -1,4 +1,4 @@
-name: test
+name: clippy
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  test:
+  clippy:
     runs-on: ubuntu-latest
     steps:
       - name: "Code Checkout"
@@ -16,5 +16,5 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: "Environment Setup"
         uses: ./.github/base
-      - name: "Test Codebase"
-        run: cargo test --all --all-features --target=$TEST_TARGET
+      - name: "Lint Codebase"
+        run: cargo clippy -- --deny warnings --target=$BUILD_TARGET
