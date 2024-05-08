@@ -19,10 +19,10 @@ jobs:
         uses: fastly/compute-actions/build@v7
         with:
           verbose: true # optionally enables verbose output, defaults to false
-    - name: Deploy Compute Package
-      uses: fastly/compute-actions/deploy@v7
-      with:
-        comment: 'Deployed via GitHub Actions' # optional
-      env:
-        FASTLY_API_TOKEN: ${{ secrets.FASTLY_API_TOKEN }}
+      - name: Deploy Compute Package
+        uses: fastly/compute-actions/deploy@v7
+        with:
+          comment: 'Deployed via GitHub Actions' # optional
+        env:
+          FASTLY_API_TOKEN: ${{ secrets.FASTLY_API_TOKEN }}
         

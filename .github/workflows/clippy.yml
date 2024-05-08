@@ -17,4 +17,4 @@ jobs:
       - name: "Environment Setup"
         uses: ./.github/base
       - name: "Lint Codebase"
-        run: cargo clippy -- --deny warnings --target=$BUILD_TARGET
+        run: cargo clippy -- --deny warnings
